@@ -1,21 +1,29 @@
 <template>
+
   <div class="container">
     <div class="lists-container">
       <div class="todo-list">
         <div class="title"></div>
+        <button @click="clear()" class="clear">Clear</button>
+        
         <div>
           <h2>To Do List</h2>
-          <div v-for="(todo, index) in todos" :key="index">
+          <div v-for="(todo, index) in todoList" :key="index">
             <div class="input-container">
-              <input v-model="todo.text" placeholder="" @click="generateRandomColor(todo), playNote()" class="input-style" :style="{ backgroundColor: todo.bgColor }" @keydown.enter="moveToDone(index)"/>
+              <input v-model="todo.text" placeholder="Your Todo Note" 
+                @click="generateRandomColor(todo), playNote()"
+                class="input-style" 
+                :style="{ backgroundColor: todo.bgColor }"
+                @keydown.enter="addTodo(todo.text, 1, index)"
+                onload="setup()"/>
               <button @click="moveToDone(index)" class="move-to-done">Done</button>
             </div>
           </div>
-          <button @click="addTodo()">+</button>
+          <button @click="addTodo('', 0)"  class="plus">+</button>
         </div>
       </div>
       <div class="done-list">
-        <h2>Done List</h2>
+        <h2>Done</h2>
         <div v-for="(done, index) in dones" :key="index" >
           <div class="input-container">
             <input v-model="done.text" class="done-input" readonly/>
@@ -24,17 +32,90 @@
       </div>
     </div>
   </div>
+
 </template>
 
 <script>
+
+
+import Axios from "axios";
+import { onMounted } from "vue";
+//const toDoUrl = "http://127.0.0.1:5000/"
+
+
 export default {
   data() {
     return {
-      todos: [{ text: '', bgColor: '#FB9999' }],
+      todoList: [{ text: '', bgColor: '#FB9999' }],
+      todoItem: {},
       dones: [],
+      editMode: false,
     }
   },
-  methods: {
+  
+  methods: 
+  {
+    
+
+    saveDoneItem(doneItem, index){
+      const requestBody = { "done": doneItem, "index": index};
+      Axios.post('http://192.168.29.45:5000/api/adddone', requestBody)
+      .then(response => {
+      console.log('New done item was successfully sent to server:', response.data);
+      })
+      .catch(error => {
+      console.error('Failed to send new done item to server:', error);
+      });
+    },
+
+    saveTodoItem(todoItem){
+      const requestBody = { "todo": todoItem };
+      Axios.post('http://192.168.29.45:5000/api/addtodo', requestBody)
+      .then(response => {
+      console.log('New To Do item was successfully sent to server:', response.data);
+      })
+      .catch(error => {
+      console.error('Failed to send new To Do item to server:', error);
+      });
+    },
+
+    addTodo(input, bool, index, color){
+      if(bool==1 && index!=0){
+        return 0
+      }
+      const newTodo = { text: input, bgColor: '#FB9999' };
+      this.todoList.push(newTodo);
+      if(bool!=1){
+        console.log("normal");
+      }
+      else{
+        const todo = this.todoList[index];
+        todo.text='';
+      }
+      if(bool!=2){
+        this.saveTodoItem(input);
+      }
+    },
+    generateRandomColor(todo) {
+      const randomColor = '#' + Math.floor(Math.random() * 16777215).toString(16);
+      todo.bgColor = randomColor;
+    },
+    moveToDone(index) {
+      this.playChord()
+      const todo = this.todoList[index];
+      if (todo.text !== '') {
+        this.dones.push({ text: todo.text, bgColor: todo.bgColor });
+        this.saveDoneItem(todo.text, index); // send to api
+        // this.done.bgColor=todo.bgColor;
+        if(index!=0){
+          this.todoList.splice(index, 1);
+        }
+        else{
+          todo.text='';
+        }
+      }
+      
+    },
     playNote(){
       const notes = ["c", "d", "e", "f", "g", "a", "b", "c5"];
       const index = Math.floor(Math.random() * notes.length);
@@ -51,93 +132,76 @@ export default {
       var chord = new Audio(randomChordAddr);
       chord.play();
     },
-    generateRandomColor(todo) {
-      const randomColor = '#' + Math.floor(Math.random() * 16777215).toString(16);
-      todo.bgColor = randomColor;
-    },
-    addTodo() {
-      this.todos.push({ text: '', bgColor: '#FB9999' });
-    },
-    moveToDone(index) {
-      this.playChord()
-      const todo = this.todos[index];
-      if (todo.text !== '') {
-        this.dones.push({ text: todo.text, bgColor: todo.bgColor });
-        // this.done.bgColor=todo.bgColor;
-        
+    setup() {
+      console.log("MOUNTED");
+      Axios.get('http://192.168.29.45:5000/api/getdata')
+      .then(response => {
 
-        if(index!=0){
-          this.todos.splice(index, 1);
+        // Adding all todos
+        var json_data = response.data;
+        var n_of_todos = Object.keys(json_data["todo"]).length
+        console.log(n_of_todos);
+        console.log(json_data);
+        if (n_of_todos>0){
+          for( let i=0; i<n_of_todos; i++){
+            console.log(json_data["todo"][i]);
+            this.addTodo(json_data["todo"][i], 2);
+          }
         }
-        else{
-          todo.text='';
+        // Adding all dones
+        var n_of_dones = Object.keys(json_data["done"]).length
+        console.log(n_of_dones);
+        console.log(json_data);
+        if (n_of_dones>0){
+          for( let i=0; i<n_of_dones; i++){
+            console.log(json_data["done"][i]);
+            this.dones.push({ text: json_data["done"][i] });
+          }
         }
-      }
+      })
+      .catch(error => {
+        console.log(error);
+      });
+
     },
+    clear(){
+      Axios.post('http://192.168.29.45:5000/api/clear');
+      this.todoList=[{ text: '', bgColor: '#FB9999' }];
+      
+      this.dones = [];
+      this.playChord();
+    },
+    logtheshitoutofit(){
+      console.log(this.todoList);
+    }
   },
-}
+
+  mounted: function() {
+    this.setup();
+    console.log("Mounted!");
+  },
+      
+};
 </script>
 
+
 <style>
-.container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
+
+.nav{
+  /* Login */
+outline: none;
+box-sizing: 0;
+position: fixed;
+font-size: 1.5vw;
+font-weight: bold;
+margin-bottom: 20px;
+color: #D9D9D9;
+font-family: 'JetBrains Mono', monospace;
+font-style: normal;
+top:2%;
+right:1.5%;
+margin-bottom: 20px;
+text-underline-offset:0;
 }
 
-.lists-container {
-  display: flex;
-  flex-direction: row;
-  justify-content: space-between;
-  width: 100%;
-}
-
-.todo-list {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: calc(50% - 30px);
-  max-width: 500px;
-  border-radius: 25px;
-  
-}
-
-.done-list {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: calc(50% - 30px);
-  max-width: 500px;
-  border-radius: 25px;
-}
-
-.done-input {
-  position: relative;
-  width: 100%;
-  max-width: 500px;
-  height: 38.5px;
-  margin: 10px auto;
-  padding: 0 20px;
-  border-radius: 25px;
-  align-self: center;
-  outline: none;
-  font-size: 16px;
-  line-height: 1.5;
-  color: #333;
-  border: none;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-}
-
-@media screen and (max-width: 768px) {
-  .lists-container {
-    flex-direction: column;
-    align-items: center;
-  }
-  
-  .todo-list,
-  .done-list {
-    width: 100%;
-    margin-bottom: 20px;
-  }
-}
 </style>
